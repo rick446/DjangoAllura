@@ -8,6 +8,7 @@ class _SettingsModule(object):
 
     def __init__(self):
         self.DATABASES = _DatabaseProxy()
+        self.DATABASE_ROUTERS = [ 'djall.db.DatabaseRouter' ]
         self.ROOT_URLCONF = 'djall_urls_module'
         self.MIDDLEWARE_CLASSES = (
             'django.middleware.common.CommonMiddleware',
@@ -36,12 +37,10 @@ class _DatabaseProxy(dict):
         return name == 'default'
 
     def __getitem__(self, name):
-        if name != 'default': raise KeyError, name
-        path = c.app.db_name
         return dict(
             ENGINE='django.db.backends.sqlite3',
             OPTIONS={},
-            NAME=path,
+            NAME=name,
             USER='',
             PASSWORD='',
             HOST='',

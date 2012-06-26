@@ -33,7 +33,6 @@ class DjangoApp(Application):
 
     def install(self, project):
         'By default, do a syncdb'
-        import pdb; pdb.set_trace()
         from django.core.management.commands import syncdb
         command = syncdb.Command()
         command.execute(verbosity=1, interactive=0, show_traceback=1, database='default')
