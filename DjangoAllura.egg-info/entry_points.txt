@@ -1,0 +1,6 @@
+
+      # -*- Entry points: -*-
+      [allura]
+      rietveld = djall:RietveldApp
+      polls = djall:PollsApp
+      
