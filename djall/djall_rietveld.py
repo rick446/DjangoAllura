@@ -1,6 +1,8 @@
 import os.path
 
 import pkg_resources
+import gae2django
+gae2django.install()
 
 import tg
 from pylons import c
@@ -11,9 +13,6 @@ from allura.lib import helpers as h
 
 from .djall_base import DjangoApp
 
-import django.conf
-
-django.conf.DATABASE_ROUTERS = [ 'djall.db.DatabaseRouter' ]
 
 class RietveldApp(DjangoApp):
     __version__ = 0.1
@@ -27,6 +26,13 @@ class RietveldApp(DjangoApp):
         32:'images/admin_32.png',
         48:'images/admin_48.png'
     }
+    app_name = 'codereview'
+
+    def __init__(self, project, config):
+        super(RietveldApp, self).__init__(project, config)
+        from codereview import urls
+        self.urlpatterns = urls.urlpatterns
+        self.template_dirs = [ pkg_resources.resource_filename('rietveld', 'templates') ]
 
     def is_visible_to(self, user):
         '''Whether the user can view the app.'''
@@ -53,10 +59,5 @@ class RietveldApp(DjangoApp):
     def admin_menu(self):
         return []
 
-    def install(self, project):
-        pass
-
-    def uninstall(self, project): # pragma no cover
-        pass
 
         

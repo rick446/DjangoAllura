@@ -16,3 +16,4 @@ class DatabaseRouter(object):
 
     def allow_syncdb(self, db, model):
         return True
+

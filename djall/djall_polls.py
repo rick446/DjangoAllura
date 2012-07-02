@@ -10,7 +10,6 @@ from allura.lib.security import has_access
 from allura.lib import helpers as h
 
 from .djall_base import DjangoApp
-from polls import urls
 
 
 class PollsApp(DjangoApp):
@@ -25,12 +24,13 @@ class PollsApp(DjangoApp):
         32:'images/admin_32.png',
         48:'images/admin_48.png'
     }
+    app_name = 'polls'
 
     def __init__(self, project, config):
         super(PollsApp, self).__init__(project, config)
+        from polls import urls
         self.urlpatterns = urls.urlpatterns
         self.template_dirs = [ pkg_resources.resource_filename('polls', 'templates') ]
-        self.installed_apps = ( 'polls', )
 
     def is_visible_to(self, user):
         '''Whether the user can view the app.'''

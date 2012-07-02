@@ -1,23 +1,15 @@
 import os.path
 
-from . import settings
-
-import pkg_resources
-
 import tg
-from pylons import c
 
-from allura.app import Application, DefaultAdminController, SitemapEntry
-from allura.lib.security import has_access
-from allura.lib import helpers as h
+from allura.app import Application, DefaultAdminController
+
+from djall import settings
 
 from .controllers import RootController
 
-import django.conf
-
-django.conf.DATABASE_ROUTERS = [ 'djall.db.DatabaseRouter' ]
-
 class DjangoApp(Application):
+    app_name = None
 
     def __init__(self, project, config):
         super(DjangoApp, self).__init__(project, config)
@@ -34,8 +26,10 @@ class DjangoApp(Application):
     def install(self, project):
         'By default, do a syncdb'
         from django.core.management.commands import syncdb
+        if os.path.exists(self.db_name):
+            os.remove(self.db_name)
         command = syncdb.Command()
-        command.execute(verbosity=1, interactive=0, show_traceback=1, database='default')
+        command.execute(verbosity=1, interactive=0, show_traceback=1, database=self.db_name)
 
     def uninstall(self, project=None, project_id=None):
         'By default, remove the db file'

@@ -1,5 +1,6 @@
 from django.core.handlers.wsgi import WSGIHandler
 
+from pylons import c
 from tg.controllers import WSGIAppController
 
 class RootController(WSGIAppController):
