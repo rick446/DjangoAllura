@@ -1,6 +1,6 @@
 from django.core.handlers.wsgi import WSGIHandler
+from django.shortcuts import render_to_response
 
-from pylons import c
 from tg.controllers import WSGIAppController
 
 class RootController(WSGIAppController):
@@ -10,4 +10,5 @@ class RootController(WSGIAppController):
         super(RootController, self).__init__(self._django)
 
     def delegate(self, environ, start_response):
-        return super(RootController, self).delegate(environ, start_response)
+        result = super(RootController, self).delegate(environ, start_response)
+        return result

@@ -14,9 +14,9 @@ from allura.lib.security import has_access
 from allura.lib import helpers as h
 from allura import model as M
 
-from codereview import models
-
 from .djall_base import DjangoApp
+
+from codereview import models
 
 class RietveldApp(DjangoApp):
     __version__ = 0.1
@@ -36,7 +36,10 @@ class RietveldApp(DjangoApp):
         super(RietveldApp, self).__init__(project, config)
         from codereview import urls
         self.urlpatterns = urls.urlpatterns
-        self.template_dirs = [ pkg_resources.resource_filename('rietveld', 'templates') ] 
+        self.template_dirs = [
+            pkg_resources.resource_filename('djall', 'templates/rietveld'),
+            ]
+        print self.template_dirs
         self.extra_settings = dict(
             DjangoApp.extra_settings,
             RIETVELD_REVISION = '',
@@ -49,6 +52,8 @@ class RietveldApp(DjangoApp):
             'djall.djall_rietveld.AddUserToRequestMiddleware',
             'django.middleware.doc.XViewMiddleware',
             ))
+        self.media_url = tg.config['static.script_name'] + config['tool_name'] + '/'
+        self.static_url = tg.config['static.script_name'] + config['tool_name'] + '/'
 
     def is_visible_to(self, user):
         '''Whether the user can view the app.'''

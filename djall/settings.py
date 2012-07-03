@@ -61,6 +61,20 @@ class _SettingsModule(object):
             return ()
 
     @property
+    def MEDIA_URL(self):
+        try:
+            return c.app.media_url
+        except TypeError:
+            return ''
+
+    @property
+    def STATIC_URL(self):
+        try:
+            return c.app.static_url
+        except TypeError:
+            return ''
+
+    @property
     def MIDDLEWARE_CLASSES(self):
         return self.__getattr__('MIDDLEWARE_CLASSES')
 

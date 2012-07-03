@@ -1,12 +1,18 @@
 import os.path
 
 import tg
+import django.template
 
 from allura.app import Application, DefaultAdminController
 
-from djall import settings
+from djall import settings, library
 
 from .controllers import RootController
+
+# Add our own template library.
+_library_name = 'djall.library'
+if not django.template.libraries.get(_library_name, None):
+  django.template.add_to_builtins(_library_name)
 
 class DjangoApp(Application):
     app_name = None
