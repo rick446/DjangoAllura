@@ -4,6 +4,8 @@ import pkg_resources
 from pylons import c
 from ming.utils import LazyProperty
 
+os.environ['DJANGO_SETTINGS_MODULE'] = 'djall_settings_module'
+
 class _DatabaseProxy(dict):
 
     def __contains__(self, name):
@@ -23,18 +25,10 @@ class _SettingsModule(object):
 
     def __init__(self):
         self.__file__ = __file__
-    
-        # Don't import the settings module; it's irrelevant
-
         self.DATABASES = _DatabaseProxy()
         self.DATABASE_ROUTERS = [ 'djall.db.DatabaseRouter' ]
         self.ROOT_URLCONF = 'djall_urls_module'
-        self.MIDDLEWARE_CLASSES = (
-            'django.middleware.common.CommonMiddleware',
-            'djall.middleware.UserMiddleware',
-            )
         self.DEBUG_PROPAGATE_EXCEPTIONS=True
-        self.__file__ = __file__
 
     @LazyProperty
     def INSTALLED_APPS(self):
@@ -65,6 +59,15 @@ class _SettingsModule(object):
             return c.app.template_dirs
         except TypeError:
             return ()
+
+    @property
+    def MIDDLEWARE_CLASSES(self):
+        return self.__getattr__('MIDDLEWARE_CLASSES')
+
+    def __getattr__(self, name):
+        if c.app and name in c.app.extra_settings:
+            return c.app.extra_settings[name]
+        raise AttributeError, name
 
 class _UrlsProxy(object):
 

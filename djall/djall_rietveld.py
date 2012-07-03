@@ -6,13 +6,17 @@ gae2django.install()
 
 import tg
 from pylons import c
+from django.contrib.messages.api import get_messages
+
 
 from allura.app import Application, DefaultAdminController, SitemapEntry
 from allura.lib.security import has_access
 from allura.lib import helpers as h
+from allura import model as M
+
+from codereview import models
 
 from .djall_base import DjangoApp
-
 
 class RietveldApp(DjangoApp):
     __version__ = 0.1
@@ -32,7 +36,19 @@ class RietveldApp(DjangoApp):
         super(RietveldApp, self).__init__(project, config)
         from codereview import urls
         self.urlpatterns = urls.urlpatterns
-        self.template_dirs = [ pkg_resources.resource_filename('rietveld', 'templates') ]
+        self.template_dirs = [ pkg_resources.resource_filename('rietveld', 'templates') ] 
+        self.extra_settings = dict(
+            DjangoApp.extra_settings,
+            RIETVELD_REVISION = '',
+            RIETVELD_INCOMING_MAIL_MAX_SIZE = 500*1024,
+            UPLOAD_PY_SOURCE = os.path.join(os.path.dirname(__file__), 'upload.py'),
+            MIDDLEWARE_CLASSES=(
+            'django.middleware.common.CommonMiddleware',
+            'djall.middleware.UserMiddleware',
+            'djall.middleware.DisableCSRFMiddleware',
+            'djall.djall_rietveld.AddUserToRequestMiddleware',
+            'django.middleware.doc.XViewMiddleware',
+            ))
 
     def is_visible_to(self, user):
         '''Whether the user can view the app.'''
@@ -60,4 +76,27 @@ class RietveldApp(DjangoApp):
         return []
 
 
-        
+
+class AddUserToRequestMiddleware(object):
+    """Just add the account..."""
+
+    def process_request(self, request):
+        account = None
+        is_admin = False
+        if request.user is not None:
+            account = models.Account.get_account_for_user(request.user)
+            is_admin = has_access(c.project, 'admin')
+        models.Account.current_user_account = account
+        request.user_is_admin = is_admin
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        is_rietveld = view_func.__module__.startswith('codereview')
+        user = request.user
+        if is_rietveld and user is None:
+            # Pre-fetch messages before changing request.user so that
+            # they're cached (for Django 1.2.5 and above).
+            request._messages = get_messages(request)
+            request.user = None
+        response = view_func(request, *view_args, **view_kwargs)
+        request.user = user
+        return response

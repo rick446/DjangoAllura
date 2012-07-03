@@ -10,6 +10,11 @@ from .controllers import RootController
 
 class DjangoApp(Application):
     app_name = None
+    extra_settings=dict(
+        MIDDLEWARE_CLASSES=(
+            'django.middleware.common.CommonMiddleware',
+            'djall.middleware.UserMiddleware',
+            ))
 
     def __init__(self, project, config):
         super(DjangoApp, self).__init__(project, config)
