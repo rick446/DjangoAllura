@@ -1,5 +1,13 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
   "http://www.w3.org/TR/html4/loose.dtd">
+{%do g.register_forge_js('js/jquery-base.js') %}
+{%do g.register_forge_js('js/jquery.notify.js') %}
+{%do g.register_forge_js('js/sylvester.js') %}
+{%do g.register_forge_js('js/pb.transformie.min.js') %}
+{%do g.register_forge_js('js/allura-base.js') %}
+{%do g.register_forge_css('css/forge/hilite.css') %}
+{%do g.theme.require() %}
+{%do g.resource_manager.register_widgets(c) %}
 <html>
 <head>
   <title>
@@ -36,14 +44,15 @@
  	    title="Issue {{issue.key.id}}"
  	    href="{%url django.contrib.syndication.views.Feed url="issue"%}/{{issue.key.id}}" />
    {%endif%}
-     {%ewregion 'head_css'%}
-     {%ewregion 'head_js'%}
+     {%ewregion head_css%}
+     {%ewregion head_js%}
 
    <!-- head block to insert js/css for forms processing -->
    {%block head%}{%endblock%}
    <!-- /head -->
 </head>
 <body onunload="M_unloadPage();">
+  {%ewregion body_top_js%}
 
 <!-- Begin help window -->
 <script type="text/javascript"><!--
@@ -254,6 +263,8 @@ var publish_link = "{%url codereview.views.publish issue.key.id%}";
   </div>
   <div style="margin-top: .3em;">This is Rietveld <a href='http://code.google.com/p/rietveld/updates/list'>{{rietveld_revision}}</a></div>
 </div>
+  {%ewregion body_js%}
+  {%ewregion body_js_tail%}
 
 </body>
 </html>
