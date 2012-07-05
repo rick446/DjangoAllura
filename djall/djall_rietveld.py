@@ -39,7 +39,6 @@ class RietveldApp(DjangoApp):
         self.template_dirs = [
             pkg_resources.resource_filename('djall', 'templates/rietveld'),
             ]
-        print self.template_dirs
         self.extra_settings = dict(
             DjangoApp.extra_settings,
             RIETVELD_REVISION = '',
