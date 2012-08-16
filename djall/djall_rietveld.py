@@ -16,8 +16,6 @@ from allura import model as M
 
 from .djall_base import DjangoApp
 
-from codereview import models
-
 class RietveldApp(DjangoApp):
     __version__ = 0.1
     installable = True
@@ -85,6 +83,8 @@ class AddUserToRequestMiddleware(object):
     """Just add the account..."""
 
     def process_request(self, request):
+        from codereview import models
+
         account = None
         is_admin = False
         if request.user is not None:
