@@ -24,6 +24,6 @@ setup(name='DjangoAllura',
       # -*- Entry points: -*-
       [allura]
       rietveld = djall:RietveldApp
-      polls = djall:PollsApp
+      # polls = djall:PollsApp
       """,
       )

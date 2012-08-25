@@ -1,12 +1,68 @@
 from pylons import c
 from allura import model as M
 
-import ming.odm
+import bson
+import ming
 from ming import gql
 from ming import schema as S
-from ming.odm.declarative import MappedClass
+from ming.declarative import Document
 
 from . import users
+
+Blob = bson.Binary
+
+def run_in_transaction(func, *args, **kwargs):
+    '''Not really; we use MongoDB'''
+    return func(*args, **kwargs)
+
+def put(models):
+    for model in models:
+        model.put()
+
+def idgen(cls, kind):
+    def gen_id():
+        db = cls.__mongometa__.session.db
+        doc = db._identifier.find_and_modify(
+            {'_id': kind},
+            {'$inc': { 'next_id': 1 } },
+            upsert=True, new=True)
+        return doc['next_id']
+    return gen_id
+
+class KeyIdentifierSchema(S.Scalar):
+
+    def __init__(self, **kw):
+        self.int = S.Int(**kw)
+        self.str = S.String(**kw)
+        self.missing = lambda:None
+        super(KeyIdentifierSchema, self).__init__(if_missing=lambda:self.missing(), **kw)
+
+    def _validate(self, value, **kw):
+        try:
+            result = self.int._validate(value, **kw)
+        except S.Invalid:
+            result = self.str._validate(value, **kw)
+        return result
+
+class KeyType(ming.base.Object):
+
+    def id(self):
+        return self.identifier
+
+class KeyTypeSchema(S.Object):
+
+    def __init__(self, **kw):
+        fields = dict(
+            kind=S.Value(None), # will be filled in later
+            identifier=KeyIdentifierSchema(),
+            ancestor_path=[
+                dict(kind=str,
+                     identifier=KeyIdentifierSchema()) ])
+        super(KeyTypeSchema, self).__init__(fields=fields, **kw)
+
+    def _validate(self, value, **kw):
+        result = super(KeyType, self)._validate(value, **kw)
+        return KeyType(result)
 
 class DatabaseRouter(object):
     '''A router to control all database operations on Django models'''
@@ -25,26 +81,27 @@ class DatabaseRouter(object):
     def allow_syncdb(self, db, model):
         return True
 
-class _ModelMeta(MappedClass.__metaclass__):
+class _ModelMeta(Document.__metaclass__):
 
     def __new__(meta, name, bases, dct):
         mm = dct.get('__mongometa__')
         if not mm:
             class __mongometa__: pass
             dct['__mongometa__'] = mm = __mongometa__
-        if '_id' not in dct:
-            dct['_id'] = ming.odm.FieldProperty(S.ObjectId)
+        dct['_id'] = ming.Field(KeyTypeSchema)
         mm.name = name
-        cls = MappedClass.__metaclass__.__new__(meta, name, bases, dct)
+        cls = Document.__metaclass__.__new__(meta, name, bases, dct)
         cls._model_by_collection_name[name] = cls
         cls._meta = _DjangoMeta(cls)
+        cls._id.field.schema.fields['kind'].value = name
+        cls._id.field.schema.fields['kind'].if_missing = name
+        cls._id.field.schema.fields['identifier'].missing = idgen(cls, name)
         return cls
 
 class _DjangoMeta(object):
 
     def __init__(self, cls):
         self._cls = cls
-        self._mapper = cls.query.mapper
 
     @property
     def fields(self):
@@ -54,31 +111,34 @@ class _DjangoMeta(object):
     def many_to_many(self):
         return []
 
-class Model(MappedClass):
+class Model(Document):
     __metaclass__ = _ModelMeta
     _model_by_collection_name = {}
     class __mongometa__:
-        session = M.project_orm_session
+        session = M.project_doc_session
 
     class DoesNotExist(Exception): pass
+
+    def __init__(self, **kwargs):
+        super(Model, self).__init__(kwargs)
 
     def key(self):
         return self._id
 
     def put(self):
-        pass # objects are automatically flushed with Ming
+        self.m.save()
 
     @classmethod
     def all(cls):
         return ModelQuery(cls)
 
     @classmethod
-    def get(cls, key_or_keys):
+    def gae_get(cls, key_or_keys):
         if isinstance(key_or_keys, (list, set)):
-            return cls.query.find(dict(
+            return cls.m.find(dict(
                     _id={'$in': list(key_or_keys)})).all()
         else:
-            return cls.query.get(_id=key_or_keys)
+            return cls.m.get(_id=key_or_keys)
 
     @classmethod
     def get_or_insert(cls, key, **kwargs):
@@ -101,10 +161,10 @@ class Model(MappedClass):
         result = []
         for key in keys:
             try:
-                kwds = {'gae_key': str(key)}
+                kwds = {'_id': str(key)}
                 if parent is not None:
                     kwds['gae_ancestry__icontains'] = str(parent.key())
-                result.append(cls.query.get(**kwds))
+                result.append(cls.m.get(**kwds))
             except cls.DoesNotExist:
                 result.append(None)
         if single and len(result) != 0:
@@ -117,26 +177,36 @@ class Model(MappedClass):
     @classmethod
     def gql(cls, gql_text, *args, **kwargs):
         pymongo_cursor = gql.gql_filter(
-            cls.query.mapper.collection.m.collection,
+            cls.m.mapper.collection.m.collection,
             gql_text, *args, **kwargs)
-        ming_cursor = ming.Cursor(cls.query.mapper.collection, pymongo_cursor)
-        odm_cursor = ming.odm.odmsession.ODMCursor(
-            M.project_orm_session,
-            cls, ming_cursor)
-        return odm_cursor
+        return pymongo_cursor
 
     @classmethod
     def get_model_class_by_collection(cls, cname):
         return cls._model_by_collection_name[cname]
 
-def GqlQuery(stmt, *args, **kwargs):
-    parse_result, cursor = gql.gql_statement_with_context(
-        M.project_orm_session.db, stmt, *args, **kwargs)
-    parse_result.pop('fields')
-    cls = Model.get_model_class_by_collection(
-        parse_result.pop('collection'))
-    return ModelQuery(cls, **parse_result)
-    
+class GqlQuery(object):
+
+    def __init__(self, stmt, *args, **kwargs):
+        self._stmt = stmt
+        self._args = args
+        self._kwargs = kwargs
+        self._model_query = None
+
+    def bind(self, *args, **kwargs):
+        return GqlQuery(self._stmt, *args, **kwargs)
+
+    def _do_query(self):
+        parse_result, cursor = gql.gql_statement_with_context(
+            M.project_orm_session.db, self._stmt, *self._args, **self._kwargs)
+        parse_result.pop('fields')
+        cls = Model.get_model_class_by_collection(
+            parse_result.pop('collection'))
+        return ModelQuery(cls, **parse_result)
+
+    def __iter__(self):
+        return iter(self._do_query())
+
 class ModelQuery(object):
     
     def __init__(self, cls,
@@ -189,7 +259,7 @@ class ModelQuery(object):
 
     def _build_cursor(self):
         spec = self._build_spec()
-        cursor = self._cls.query.find(spec)
+        cursor = self._cls.m.find(spec)
         if self._sort:
             cursor = cursor.sort(self._sort)
         if self._limit:
@@ -205,5 +275,13 @@ class UserProperty(ming.odm.FieldProperty):
 
     def __init__(self, auto_current_user_add=False, **kwargs):
         if auto_current_user_add:
-            kwargs['if_missing'] = lambda: users.get_current_user().username
+            kwargs['if_missing'] = self._current_user_username
+            kwargs['required'] = False
         super(UserProperty, self).__init__(str, **kwargs)
+
+    def _current_user_username(self):
+        u = users.get_current_user()
+        if u: return u.username
+        return None
+        
+

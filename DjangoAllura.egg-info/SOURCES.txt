@@ -13,5 +13,8 @@ djall/djall_base.py
 djall/djall_polls.py
 djall/djall_rietveld.py
 djall/django_settings.py
+djall/library.py
+djall/middleware.py
 djall/settings.py
+djall/users.py
 djall/wsgi.py

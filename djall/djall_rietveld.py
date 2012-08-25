@@ -32,8 +32,6 @@ class RietveldApp(DjangoApp):
 
     def __init__(self, project, config):
         super(RietveldApp, self).__init__(project, config)
-        from codereview import urls
-        self.urlpatterns = urls.urlpatterns
         self.template_dirs = [
             pkg_resources.resource_filename('djall', 'templates/rietveld'),
             ]
@@ -42,6 +40,8 @@ class RietveldApp(DjangoApp):
             RIETVELD_REVISION = '',
             RIETVELD_INCOMING_MAIL_MAX_SIZE = 500*1024,
             UPLOAD_PY_SOURCE = os.path.join(os.path.dirname(__file__), 'upload.py'),
+            DEBUG=False,
+            TEMPLATE_DEBUG=False,
             MIDDLEWARE_CLASSES=(
             'django.middleware.common.CommonMiddleware',
             'djall.middleware.UserMiddleware',
@@ -51,6 +51,9 @@ class RietveldApp(DjangoApp):
             ))
         self.media_url = tg.config['static.script_name'] + config['tool_name'] + '/'
         self.static_url = tg.config['static.script_name'] + config['tool_name'] + '/'
+        with h.push_config(c, app=self):
+            from codereview import urls
+        self.urlpatterns = urls.urlpatterns
 
     def is_visible_to(self, user):
         '''Whether the user can view the app.'''
@@ -99,7 +102,7 @@ class AddUserToRequestMiddleware(object):
         if is_rietveld and user is None:
             # Pre-fetch messages before changing request.user so that
             # they're cached (for Django 1.2.5 and above).
-            request._messages = get_messages(request)
+            request._messages = [] # get_messages(request)
             request.user = None
         response = view_func(request, *view_args, **view_kwargs)
         request.user = user

@@ -57,21 +57,21 @@ class _SettingsModule(object):
     def TEMPLATE_DIRS(self):
         try:
             return c.app.template_dirs
-        except TypeError:
+        except AttributeError:
             return ()
 
     @property
     def MEDIA_URL(self):
         try:
             return c.app.media_url
-        except TypeError:
+        except AttributeError:
             return ''
 
     @property
     def STATIC_URL(self):
         try:
             return c.app.static_url
-        except TypeError:
+        except AttributeError:
             return ''
 
     @property

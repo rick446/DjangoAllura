@@ -11,6 +11,9 @@ class User(object):
 
     def email(self):
         return self._user.username + '@local'
+
+    def get_and_delete_messages(self):
+        return []
         
 
 def create_login_url(path):
@@ -20,6 +23,7 @@ def create_logout_url(path):
     return '/auth/logout'
 
 def get_current_user():
-    if c.user is M.User.anonymous():
-        return None
-    return c.user
+    result = getattr(c, 'user', None)
+    if result and result is M.User.anonymous():
+        result = None
+    return result
