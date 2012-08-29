@@ -29,13 +29,13 @@ def idgen(cls, kind):
         return doc['next_id']
     return gen_id
 
-class KeyIdentifierSchema(S.Scalar):
+class KeyIdSchema(S.Scalar):
 
     def __init__(self, **kw):
         self.int = S.Int(**kw)
         self.str = S.String(**kw)
         self.missing = lambda:None
-        super(KeyIdentifierSchema, self).__init__(if_missing=lambda:self.missing(), **kw)
+        super(KeyIdSchema, self).__init__(if_missing=lambda:self.missing(), **kw)
 
     def _validate(self, value, **kw):
         try:
@@ -44,25 +44,28 @@ class KeyIdentifierSchema(S.Scalar):
             result = self.str._validate(value, **kw)
         return result
 
-class KeyType(ming.base.Object):
+class Key(ming.base.Object):
+
+    def __init__(self, **kwargs):
+        super(Key, self).__init__(kwargs)
 
     def id(self):
-        return self.identifier
+        return self.s.id
 
-class KeyTypeSchema(S.Object):
+    def as_path(self):
+        return [ self.s ] + self.p
+
+class KeySchema(S.Object):
 
     def __init__(self, **kw):
         fields = dict(
-            kind=S.Value(None), # will be filled in later
-            identifier=KeyIdentifierSchema(),
-            ancestor_path=[
-                dict(kind=str,
-                     identifier=KeyIdentifierSchema()) ])
-        super(KeyTypeSchema, self).__init__(fields=fields, **kw)
+            s=dict(kind=S.Value(None), id=KeyIdSchema()),
+            p=[ dict(kind=str, id=KeyIdSchema()) ])
+        super(KeySchema, self).__init__(fields=fields, **kw)
 
     def _validate(self, value, **kw):
-        result = super(KeyType, self)._validate(value, **kw)
-        return KeyType(result)
+        result = super(KeySchema, self)._validate(value, **kw)
+        return Key(**result)
 
 class DatabaseRouter(object):
     '''A router to control all database operations on Django models'''
@@ -88,14 +91,14 @@ class _ModelMeta(Document.__metaclass__):
         if not mm:
             class __mongometa__: pass
             dct['__mongometa__'] = mm = __mongometa__
-        dct['_id'] = ming.Field(KeyTypeSchema)
+        dct['_id'] = ming.Field(KeySchema)
         mm.name = name
         cls = Document.__metaclass__.__new__(meta, name, bases, dct)
         cls._model_by_collection_name[name] = cls
         cls._meta = _DjangoMeta(cls)
-        cls._id.field.schema.fields['kind'].value = name
-        cls._id.field.schema.fields['kind'].if_missing = name
-        cls._id.field.schema.fields['identifier'].missing = idgen(cls, name)
+        s = cls._id.field.schema.fields['s'].fields
+        s['kind'].value = s['kind'].if_missing = name
+        s['id'].missing = idgen(cls, name)
         return cls
 
 class _DjangoMeta(object):
@@ -120,6 +123,22 @@ class Model(Document):
     class DoesNotExist(Exception): pass
 
     def __init__(self, **kwargs):
+        if '_id' in kwargs:
+            assert isinstance(kwargs['_id'], Key)
+            assert 'parent' not in kwargs
+            assert 'key_name' not in kwargs
+        else:
+            parent = kwargs.pop('parent', None)
+            if isinstance(parent, Model):
+                parent = parent._id
+            s_id = kwargs.pop('key_name', None)
+            if s_id is None:
+                s_id = idgen(self, self.kind())()
+            key = Key(
+                s=ming.base.Object(
+                    id=s_id, kind=self.kind()),
+                p=parent.as_path() if parent else [])
+            kwargs['_id'] = key
         super(Model, self).__init__(kwargs)
 
     def key(self):
@@ -135,16 +154,28 @@ class Model(Document):
     @classmethod
     def gae_get(cls, key_or_keys):
         if isinstance(key_or_keys, (list, set)):
-            return cls.m.find(dict(
-                    _id={'$in': list(key_or_keys)})).all()
+            key_ss = [ k.s for k in key_or_keys ]
+            q = { '_id.s': { '$in': key_ss } }
+            results = dict(
+                (obj._id.s, obj) for obj in cls.m.find(q))
+            return [ results.get(key_s, None)
+                     for key_s in key_ss ]
         else:
-            return cls.m.get(_id=key_or_keys)
+            q = {'_id.s': key_or_keys.s } 
+            return cls.m.find(q).first()
 
     @classmethod
-    def get_or_insert(cls, key, **kwargs):
-        result = cls.get(key)
+    def get_or_insert(cls, key_name, **kwargs):
+        parent = kwargs.get('parent', None)
+        if parent:
+            p = parent.as_path()
+        else:
+            p = []
+        key = Key(s=dict(kind=cls.kind(), id=key_name), p=p)
+        result = cls.gae_get(key)
         if result is None:
             result = cls(_id=key, **kwargs)
+            result.put()
         return result
 
     @classmethod
@@ -152,34 +183,30 @@ class Model(Document):
         return cls.__name__
 
     @classmethod
-    def get_by_key_name(cls, keys, parent=None):
-        single = False
-        # if keys isn't a list then a single instance is returned
-        if not isinstance(keys, (list, tuple)):
-            single = True
-            keys = [keys]
-        result = []
-        for key in keys:
-            try:
-                kwds = {'_id': str(key)}
-                if parent is not None:
-                    kwds['gae_ancestry__icontains'] = str(parent.key())
-                result.append(cls.m.get(**kwds))
-            except cls.DoesNotExist:
-                result.append(None)
-        if single and len(result) != 0:
-            return result[0]
-        elif single:
-            return None
+    def get_by_key_name(cls, key_names, parent=None):
+        q = {}
+        if parent:
+            if isinstance(parent, Model):
+                parent = parent._id
+            q['_id.p.0.s'] = parent.s
+        if isinstance(key_names, (list, set)):
+            q['_id.s.id'] = { '$in': key_names } 
+            results = dict(
+                (obj._id.s, obj) for obj in cls.m.find(q))
+            return [ results.get(key_name, None)
+                     for key_name in key_names ]
         else:
-            return result
+            q['_id.s.id'] = key_names
+            return cls.m.find(q).first()
+
+    get_by_id = get_by_key_name
 
     @classmethod
     def gql(cls, gql_text, *args, **kwargs):
         pymongo_cursor = gql.gql_filter(
-            cls.m.mapper.collection.m.collection,
+            cls.m.collection,
             gql_text, *args, **kwargs)
-        return pymongo_cursor
+        return ming.Cursor(cls, pymongo_cursor, allow_extra=True, strip_extra=True)
 
     @classmethod
     def get_model_class_by_collection(cls, cname):
@@ -243,6 +270,9 @@ class ModelQuery(object):
     def fetch(self, limit, offset=0):
         return self._clone(limit=limit, skip=offset)
 
+    def order(self, name):
+        return self._clone(sort=name)
+
     def _build_spec(self):
         spec = {}
         for f_args, f_kwargs in self._filters:
@@ -271,7 +301,7 @@ class ModelQuery(object):
     def __iter__(self):
         return iter(self._build_cursor())
 
-class UserProperty(ming.odm.FieldProperty):
+class UserProperty(ming.Field):
 
     def __init__(self, auto_current_user_add=False, **kwargs):
         if auto_current_user_add:
@@ -284,4 +314,11 @@ class UserProperty(ming.odm.FieldProperty):
         if u: return u.username
         return None
         
+class ReferenceProperty(ming.Field):
+
+    def __init__(self, cls):
+        super(ReferenceProperty, self).__init__(KeySchema)
+        s = self.schema.fields['s'].fields
+        s['kind'].value = s['kind'].if_missing = cls.kind()
+        self._cls = cls
 

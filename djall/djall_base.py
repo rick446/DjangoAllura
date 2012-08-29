@@ -44,4 +44,8 @@ class DjangoApp(Application):
 
     def uninstall(self, project=None, project_id=None):
         'By default, remove the db file'
-        os.remove(self.db_name)
+        try:
+          os.remove(self.db_name)
+        except OSError:
+          pass
+        super(DjangoApp, self).uninstall(project, project_id)
